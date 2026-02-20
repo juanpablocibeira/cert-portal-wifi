@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Mi Panel{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Mis Solicitudes de Certificado</h1>
+    </div>
+
+    <!-- Device detection info -->
+    <div class="mb-6 p-4 rounded-lg {% if is_mobile %}bg-red-50 border border-red-200{% else %}bg-green-50 border border-green-200{% endif %}">
+        <p class="text-sm">
+            <strong>Dispositivo detectado:</strong> {{ detected_os }}
+            {% if is_mobile %}
+                <span class="ml-2 text-red-600 font-semibold">(Dispositivo movil — no se permite solicitar certificados desde moviles)</span>
+            {% else %}
+                <span class="ml-2 text-green-600">(Escritorio)</span>
+            {% endif %}
+        </p>
+    </div>
+
+    <!-- Request button -->
+    {% if not is_mobile %}
+    <div class="mb-6">
+        <form method="POST" action="/student/request" class="flex items-end gap-4 bg-white p-4 rounded-lg shadow-sm border">
+            <div class="flex-1">
+                <label for="hostname" class="block text-sm font-medium text-gray-700 mb-1">Nombre del equipo (opcional)</label>
+                <input type="text" id="hostname" name="hostname" placeholder="Ej: LAPTOP-JUAN"
+                       class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+            </div>
+            <button type="submit"
+                    class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-lg transition text-sm whitespace-nowrap">
+                Solicitar Certificado
+            </button>
+        </form>
+    </div>
+    {% endif %}
+
+    <!-- Requests list -->
+    {% if requests %}
+    <div class="bg-white rounded-lg shadow-sm border overflow-hidden">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+                <tr>
+                    <th class="px-4 py-3 text-left">#</th>
+                    <th class="px-4 py-3 text-left">Estado</th>
+                    <th class="px-4 py-3 text-left">Equipo</th>
+                    <th class="px-4 py-3 text-left">SO</th>
+                    <th class="px-4 py-3 text-left">Fecha</th>
+                    <th class="px-4 py-3 text-left">Accion</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for req in requests %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-gray-500">{{ req.id }}</td>
+                    <td class="px-4 py-3">
+                        {% if req.status == 'pendiente' %}
+                            <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Pendiente</span>
+                        {% elif req.status == 'aprobada' %}
+                            <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Aprobada</span>
+                        {% elif req.status == 'rechazada' %}
+                            <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Rechazada</span>
+                        {% elif req.status == 'revocada' %}
+                            <span class="inline-flex px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">Revocada</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">{{ req.hostname }}</td>
+                    <td class="px-4 py-3">{{ req.detected_os }}</td>
+                    <td class="px-4 py-3 text-gray-500">{{ req.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td class="px-4 py-3">
+                        {% if req.status == 'aprobada' and req.download_token and not req.download_token_used %}
+                            <a href="/student/download/{{ req.download_token }}"
+                               class="text-indigo-600 hover:text-indigo-800 font-medium">Descargar</a>
+                        {% elif req.status == 'aprobada' and req.download_token_used %}
+                            <span class="text-gray-400">Ya descargado</span>
+                        {% elif req.status == 'rechazada' and req.reject_reason %}
+                            <span class="text-red-500 text-xs" title="{{ req.reject_reason }}">{{ req.reject_reason[:50] }}</span>
+                        {% else %}
+                            <span class="text-gray-400">—</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div class="text-center py-12 text-gray-400">
+        <p class="text-lg">No tienes solicitudes aun.</p>
+        <p class="text-sm mt-1">Usa el boton de arriba para solicitar tu primer certificado.</p>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

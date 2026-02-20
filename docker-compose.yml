@@ -1,0 +1,21 @@
+services:
+  cert-portal:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./certs:/app/certs
+    environment:
+      - APP_TITLE=Portal de Certificados WiFi
+      - SECRET_KEY=${SECRET_KEY:-cambiar-por-clave-segura-de-al-menos-32-caracteres}
+      - FERNET_KEY=${FERNET_KEY}
+      - DATABASE_URL=sqlite+aiosqlite:///./data/portal.db
+      - SUPERADMIN_USERNAME=${SUPERADMIN_USERNAME:-admin}
+      - SUPERADMIN_PASSWORD=${SUPERADMIN_PASSWORD:-admin}
+      - PF_HOST=${PF_HOST:-https://localhost:9999}
+      - PF_USERNAME=${PF_USERNAME:-admin}
+      - PF_PASSWORD=${PF_PASSWORD:-}
+      - PF_CERT_PROFILE=${PF_CERT_PROFILE:-default}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-480}
+    restart: unless-stopped

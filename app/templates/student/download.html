@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Descargar Certificado{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Descargar Certificado WiFi</h1>
+
+    <!-- Password display -->
+    <div class="bg-amber-50 border-2 border-amber-300 rounded-xl p-6 mb-6">
+        <div class="flex items-start gap-3">
+            <svg class="w-6 h-6 text-amber-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+            <div class="flex-1">
+                <h2 class="font-bold text-amber-800 text-lg mb-1">Contrasena del certificado</h2>
+                <p class="text-amber-700 text-sm mb-3">Esta contrasena solo se muestra una vez. Copiala antes de descargar el archivo.</p>
+
+                <div class="flex items-center gap-2">
+                    <code id="cert-password" class="bg-white border border-amber-300 px-4 py-2 rounded-lg text-lg font-mono tracking-wider select-all flex-1">{{ cert_password }}</code>
+                    <button onclick="copyPassword()" id="copy-btn"
+                            class="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-medium transition whitespace-nowrap">
+                        Copiar
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Download button -->
+    <div class="bg-white border rounded-xl p-6 mb-6">
+        <a href="/student/download/{{ token }}/file"
+           class="block w-full bg-indigo-600 hover:bg-indigo-700 text-white text-center font-semibold py-3 rounded-lg transition text-lg">
+            Descargar archivo .p12
+        </a>
+        <p class="text-center text-gray-500 text-xs mt-2">Despues de descargar, este enlace dejara de funcionar.</p>
+    </div>
+
+    <!-- OS-specific instructions -->
+    <div class="bg-white border rounded-xl p-6">
+        <h3 class="font-bold text-gray-800 mb-4">Instrucciones de instalacion</h3>
+
+        <div class="space-y-4 text-sm text-gray-700">
+            {% if detected_os == 'Windows' %}
+            <div>
+                <h4 class="font-semibold text-indigo-700">Windows</h4>
+                <ol class="list-decimal list-inside space-y-1 ml-2">
+                    <li>Haz doble clic en el archivo .p12 descargado.</li>
+                    <li>Selecciona "Usuario actual" y haz clic en Siguiente.</li>
+                    <li>Ingresa la contrasena que copiaste arriba.</li>
+                    <li>Selecciona "Colocar todos los certificados en el siguiente almacen" > Personal.</li>
+                    <li>Finaliza el asistente. El certificado queda instalado.</li>
+                    <li>En la configuracion WiFi, selecciona la red y elige este certificado para EAP-TLS.</li>
+                </ol>
+            </div>
+            {% elif detected_os == 'macOS' %}
+            <div>
+                <h4 class="font-semibold text-indigo-700">macOS</h4>
+                <ol class="list-decimal list-inside space-y-1 ml-2">
+                    <li>Haz doble clic en el archivo .p12.</li>
+                    <li>Se abrira Acceso a Llaveros. Ingresa la contrasena del certificado.</li>
+                    <li>El certificado se anadira al llavero "inicio de sesion".</li>
+                    <li>Ve a Preferencias del Sistema > Red > WiFi > Avanzado.</li>
+                    <li>Selecciona la red y configura EAP-TLS con el certificado instalado.</li>
+                </ol>
+            </div>
+            {% elif detected_os == 'Linux' %}
+            <div>
+                <h4 class="font-semibold text-indigo-700">Linux</h4>
+                <ol class="list-decimal list-inside space-y-1 ml-2">
+                    <li>Abre NetworkManager o tu gestor de redes.</li>
+                    <li>Edita la conexion WiFi y selecciona seguridad WPA Enterprise.</li>
+                    <li>En autenticacion, selecciona TLS.</li>
+                    <li>Selecciona el archivo .p12 como "Clave privada" e ingresa la contrasena.</li>
+                    <li>Guarda y conectate.</li>
+                </ol>
+            </div>
+            {% else %}
+            <div>
+                <h4 class="font-semibold text-indigo-700">General</h4>
+                <ol class="list-decimal list-inside space-y-1 ml-2">
+                    <li>Importa el archivo .p12 en tu gestor de certificados.</li>
+                    <li>Usa la contrasena mostrada arriba al importar.</li>
+                    <li>Configura tu conexion WiFi para usar EAP-TLS con el certificado importado.</li>
+                </ol>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+function copyPassword() {
+    const pw = document.getElementById('cert-password').textContent;
+    navigator.clipboard.writeText(pw).then(() => {
+        const btn = document.getElementById('copy-btn');
+        btn.textContent = 'Copiado!';
+        btn.classList.replace('bg-amber-500', 'bg-green-500');
+        btn.classList.replace('hover:bg-amber-600', 'hover:bg-green-600');
+        setTimeout(() => {
+            btn.textContent = 'Copiar';
+            btn.classList.replace('bg-green-500', 'bg-amber-500');
+            btn.classList.replace('hover:bg-green-600', 'hover:bg-amber-600');
+        }, 2000);
+    });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}Usuarios{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Gestion de Usuarios</h1>
+    </div>
+
+    <!-- Create user form -->
+    <div class="bg-white border rounded-xl p-6 mb-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Crear Usuario</h2>
+        <form method="POST" action="/employee/users/create" class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Usuario</label>
+                <input type="text" name="username" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Contrasena</label>
+                <input type="password" name="password" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Nombre completo</label>
+                <input type="text" name="full_name" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Rol</label>
+                <select name="role" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="student">Alumno</option>
+                    <option value="employee">Empleado</option>
+                    {% if user.role == 'superadmin' %}
+                    <option value="superadmin">Superadmin</option>
+                    {% endif %}
+                </select>
+            </div>
+            <div>
+                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition">
+                    Crear
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Import CSV -->
+    <div class="bg-white border rounded-xl p-6 mb-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-gray-700 mb-2">Importar Alumnos desde CSV</h2>
+        <p class="text-gray-500 text-sm mb-4">Formato: una columna con nombre de usuario por linea (sin encabezado). Se generaran contrasenas aleatorias.</p>
+        <form method="POST" action="/employee/users/import-csv" enctype="multipart/form-data" class="flex items-end gap-4">
+            <div class="flex-1">
+                <input type="file" name="csv_file" accept=".csv,.txt" required
+                       class="w-full border rounded-lg px-3 py-2 text-sm file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-medium">
+            </div>
+            <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-semibold px-6 py-2 rounded-lg text-sm transition">
+                Importar
+            </button>
+        </form>
+    </div>
+
+    <!-- Imported users result -->
+    {% if imported_users %}
+    <div class="bg-green-50 border border-green-200 rounded-xl p-6 mb-6">
+        <div class="flex items-center justify-between mb-3">
+            <h2 class="text-lg font-semibold text-green-800">Usuarios importados ({{ imported_users|length }})</h2>
+            <button onclick="downloadImportedCSV()" class="bg-green-600 hover:bg-green-700 text-white px-4 py-1.5 rounded text-sm font-medium transition">
+                Descargar lista
+            </button>
+        </div>
+        <table class="w-full text-sm">
+            <thead class="text-green-700">
+                <tr>
+                    <th class="text-left py-1">Usuario</th>
+                    <th class="text-left py-1">Contrasena generada</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for u in imported_users %}
+                <tr class="border-t border-green-200">
+                    <td class="py-1.5">{{ u.username }}</td>
+                    <td class="py-1.5 font-mono">{{ u.password }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <script>
+    function downloadImportedCSV() {
+        const users = {{ imported_users | tojson }};
+        let csv = "usuario,contrasena\n";
+        users.forEach(u => { csv += u.username + "," + u.password + "\n"; });
+        const blob = new Blob([csv], {type: 'text/csv'});
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'usuarios_importados.csv';
+        a.click();
+    }
+    </script>
+    {% endif %}
+
+    <!-- Users table -->
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+                <tr>
+                    <th class="px-4 py-3 text-left">ID</th>
+                    <th class="px-4 py-3 text-left">Usuario</th>
+                    <th class="px-4 py-3 text-left">Nombre</th>
+                    <th class="px-4 py-3 text-left">Rol</th>
+                    <th class="px-4 py-3 text-left">Estado</th>
+                    <th class="px-4 py-3 text-left">Creado</th>
+                    <th class="px-4 py-3 text-left">Accion</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for u in users %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-gray-500">{{ u.id }}</td>
+                    <td class="px-4 py-3 font-medium">{{ u.username }}</td>
+                    <td class="px-4 py-3">{{ u.full_name }}</td>
+                    <td class="px-4 py-3">
+                        {% if u.role == 'superadmin' %}
+                            <span class="text-purple-700 font-medium">Superadmin</span>
+                        {% elif u.role == 'employee' %}
+                            <span class="text-blue-700">Empleado</span>
+                        {% else %}
+                            <span class="text-gray-600">Alumno</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if u.is_active %}
+                            <span class="text-green-600 font-medium">Activo</span>
+                        {% else %}
+                            <span class="text-red-500">Inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3 text-gray-500">{{ u.created_at.strftime('%d/%m/%Y') }}</td>
+                    <td class="px-4 py-3">
+                        {% if u.id != user.id %}
+                        <form method="POST" action="/employee/users/toggle/{{ u.id }}">
+                            {% if u.is_active %}
+                                <button class="text-red-600 hover:text-red-800 text-xs font-medium">Desactivar</button>
+                            {% else %}
+                                <button class="text-green-600 hover:text-green-800 text-xs font-medium">Activar</button>
+                            {% endif %}
+                        </form>
+                        {% else %}
+                            <span class="text-gray-400 text-xs">Tu cuenta</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

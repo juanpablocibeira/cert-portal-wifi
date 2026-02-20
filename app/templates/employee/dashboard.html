@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}Solicitudes{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Gestion de Solicitudes</h1>
+
+    <!-- Pending section -->
+    {% if pending %}
+    <div class="mb-8">
+        <div class="flex items-center gap-2 mb-3">
+            <h2 class="text-lg font-semibold text-yellow-700">Solicitudes Pendientes</h2>
+            <span class="bg-yellow-400 text-yellow-900 text-xs font-bold px-2.5 py-0.5 rounded-full">{{ pending|length }}</span>
+        </div>
+        <div class="bg-yellow-50 border border-yellow-200 rounded-xl overflow-hidden">
+            <table class="w-full text-sm">
+                <thead class="bg-yellow-100 text-yellow-800">
+                    <tr>
+                        <th class="px-4 py-3 text-left">#</th>
+                        <th class="px-4 py-3 text-left">Alumno</th>
+                        <th class="px-4 py-3 text-left">Equipo</th>
+                        <th class="px-4 py-3 text-left">SO</th>
+                        <th class="px-4 py-3 text-left">IP</th>
+                        <th class="px-4 py-3 text-left">Fecha</th>
+                        <th class="px-4 py-3 text-left">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-yellow-100">
+                    {% for req in pending %}
+                    <tr>
+                        <td class="px-4 py-3">{{ req.id }}</td>
+                        <td class="px-4 py-3 font-medium">{{ req.user.full_name or req.user.username }}</td>
+                        <td class="px-4 py-3">{{ req.hostname }}</td>
+                        <td class="px-4 py-3">{{ req.detected_os }}</td>
+                        <td class="px-4 py-3 text-gray-500">{{ req.ip_address }}</td>
+                        <td class="px-4 py-3 text-gray-500">{{ req.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td class="px-4 py-3">
+                            <div class="flex gap-2">
+                                <form method="POST" action="/employee/approve/{{ req.id }}">
+                                    <button class="bg-green-500 hover:bg-green-600 text-white px-3 py-1 rounded text-xs font-medium transition">
+                                        Aprobar
+                                    </button>
+                                </form>
+                                <form method="POST" action="/employee/reject/{{ req.id }}" class="flex gap-1">
+                                    <input type="text" name="reason" placeholder="Motivo..." class="border rounded px-2 py-1 text-xs w-32">
+                                    <button class="bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded text-xs font-medium transition">
+                                        Rechazar
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- History section -->
+    <div>
+        <h2 class="text-lg font-semibold text-gray-700 mb-3">Historial de Certificados</h2>
+        {% if history %}
+        <div class="bg-white border rounded-xl overflow-hidden shadow-sm">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50 text-gray-600">
+                    <tr>
+                        <th class="px-4 py-3 text-left">#</th>
+                        <th class="px-4 py-3 text-left">Alumno</th>
+                        <th class="px-4 py-3 text-left">Estado</th>
+                        <th class="px-4 py-3 text-left">Equipo</th>
+                        <th class="px-4 py-3 text-left">SO</th>
+                        <th class="px-4 py-3 text-left">Descargado</th>
+                        <th class="px-4 py-3 text-left">Fecha</th>
+                        <th class="px-4 py-3 text-left">Accion</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y">
+                    {% for req in history %}
+                    <tr class="hover:bg-gray-50">
+                        <td class="px-4 py-3 text-gray-500">{{ req.id }}</td>
+                        <td class="px-4 py-3 font-medium">{{ req.user.full_name or req.user.username }}</td>
+                        <td class="px-4 py-3">
+                            {% if req.status == 'aprobada' %}
+                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Aprobada</span>
+                            {% elif req.status == 'rechazada' %}
+                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">Rechazada</span>
+                            {% elif req.status == 'revocada' %}
+                                <span class="inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-gray-200 text-gray-700">Revocada</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3">{{ req.hostname }}</td>
+                        <td class="px-4 py-3">{{ req.detected_os }}</td>
+                        <td class="px-4 py-3">
+                            {% if req.status == 'aprobada' %}
+                                {{ "Si" if req.download_token_used else "No" }}
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-3 text-gray-500">{{ req.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td class="px-4 py-3">
+                            {% if req.status == 'aprobada' %}
+                                <form method="POST" action="/employee/revoke/{{ req.id }}"
+                                      onsubmit="return confirm('¿Seguro que deseas revocar este certificado?')">
+                                    <button class="text-red-600 hover:text-red-800 text-xs font-medium">Revocar</button>
+                                </form>
+                            {% elif req.status == 'rechazada' and req.reject_reason %}
+                                <span class="text-gray-500 text-xs" title="{{ req.reject_reason }}">{{ req.reject_reason[:30] }}...</span>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-400 text-center py-8">No hay solicitudes procesadas aun.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

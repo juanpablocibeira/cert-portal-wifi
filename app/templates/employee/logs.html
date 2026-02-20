@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% block title %}Logs de Actividad{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+    <h1 class="text-2xl font-bold text-gray-800 mb-6">Logs de Actividad</h1>
+
+    {% if logs %}
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+                <tr>
+                    <th class="px-4 py-3 text-left">Fecha</th>
+                    <th class="px-4 py-3 text-left">Usuario</th>
+                    <th class="px-4 py-3 text-left">Accion</th>
+                    <th class="px-4 py-3 text-left">Detalle</th>
+                    <th class="px-4 py-3 text-left">IP</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for log in logs %}
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3 text-gray-500 whitespace-nowrap">{{ log.created_at.strftime('%d/%m/%Y %H:%M:%S') }}</td>
+                    <td class="px-4 py-3 font-medium">
+                        {% if log.user %}{{ log.user.username }}{% else %}Sistema{% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="inline-flex px-2 py-0.5 rounded text-xs font-medium
+                            {% if 'error' in log.action %}bg-red-100 text-red-700
+                            {% elif 'approve' in log.action %}bg-green-100 text-green-700
+                            {% elif 'reject' in log.action or 'revoke' in log.action %}bg-yellow-100 text-yellow-700
+                            {% elif 'login' in log.action %}bg-blue-100 text-blue-700
+                            {% else %}bg-gray-100 text-gray-700{% endif %}">
+                            {{ log.action }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-gray-600 max-w-md truncate">{{ log.detail }}</td>
+                    <td class="px-4 py-3 text-gray-400">{{ log.ip_address }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex justify-center items-center gap-2 mt-6">
+        {% if page > 1 %}
+            <a href="?page={{ page - 1 }}" class="px-3 py-1.5 bg-white border rounded-lg text-sm hover:bg-gray-50">Anterior</a>
+        {% endif %}
+        <span class="text-sm text-gray-500">Pagina {{ page }} de {{ total_pages }}</span>
+        {% if page < total_pages %}
+            <a href="?page={{ page + 1 }}" class="px-3 py-1.5 bg-white border rounded-lg text-sm hover:bg-gray-50">Siguiente</a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <p class="text-gray-400 text-center py-12">No hay registros de actividad.</p>
+    {% endif %}
+</div>
+{% endblock %}
