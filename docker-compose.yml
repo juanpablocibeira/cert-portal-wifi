@@ -1,8 +1,7 @@
 services:
   cert-portal:
     build: .
-    expose:
-      - "8000"
+    network_mode: host
     volumes:
       - cert-portal-data:/app/data
       - cert-portal-certs:/app/certs
