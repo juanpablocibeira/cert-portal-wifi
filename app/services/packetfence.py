@@ -1,5 +1,9 @@
+import asyncio
 import logging
+import socket
+import time
 from typing import Optional
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -67,6 +71,187 @@ class PacketFenceClient:
             return {"ok": False, "detail": f"Error HTTP {e.response.status_code}: {e.response.text[:200]}"}
         except Exception as e:
             return {"ok": False, "detail": f"Error de conexion: {str(e)[:200]}"}
+
+    async def test_connection_detailed(self) -> list[dict]:
+        """Test connection with step-by-step diagnostics.
+
+        Returns a list of steps, each with:
+          step, description, status (ok/error/skip), detail, elapsed_ms
+        """
+        steps: list[dict] = []
+
+        # --- Paso 1: Parseo de URL ---
+        t0 = time.monotonic()
+        parsed = urlparse(self.host)
+        host = parsed.hostname or parsed.path  # fallback if no scheme
+        scheme = parsed.scheme or "https"
+        default_port = 443 if scheme == "https" else 80
+        port = parsed.port or default_port
+        elapsed = round((time.monotonic() - t0) * 1000, 1)
+
+        if host:
+            steps.append({
+                "step": 1,
+                "description": "Parseo de URL",
+                "status": "ok",
+                "detail": f"Host: {host} | Puerto: {port} | Esquema: {scheme}",
+                "elapsed_ms": elapsed,
+            })
+        else:
+            steps.append({
+                "step": 1,
+                "description": "Parseo de URL",
+                "status": "error",
+                "detail": f"No se pudo extraer host de: {self.host}",
+                "elapsed_ms": elapsed,
+            })
+            return steps
+
+        # --- Paso 2: Resolucion DNS / IP ---
+        t0 = time.monotonic()
+        try:
+            infos = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            )
+            resolved_ip = infos[0][4][0] if infos else "?"
+            elapsed = round((time.monotonic() - t0) * 1000, 1)
+            steps.append({
+                "step": 2,
+                "description": "Resolucion DNS",
+                "status": "ok",
+                "detail": f"{host} -> {resolved_ip}",
+                "elapsed_ms": elapsed,
+            })
+        except Exception as e:
+            elapsed = round((time.monotonic() - t0) * 1000, 1)
+            steps.append({
+                "step": 2,
+                "description": "Resolucion DNS",
+                "status": "error",
+                "detail": f"No se pudo resolver {host}: {e}",
+                "elapsed_ms": elapsed,
+            })
+            return steps
+
+        # --- Paso 3: Conexion TCP ---
+        t0 = time.monotonic()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(5)
+            await asyncio.get_event_loop().run_in_executor(
+                None, lambda: sock.connect((resolved_ip, port))
+            )
+            sock.close()
+            elapsed = round((time.monotonic() - t0) * 1000, 1)
+            steps.append({
+                "step": 3,
+                "description": "Conexion TCP",
+                "status": "ok",
+                "detail": f"Conexion exitosa a {resolved_ip}:{port}",
+                "elapsed_ms": elapsed,
+            })
+        except Exception as e:
+            elapsed = round((time.monotonic() - t0) * 1000, 1)
+            steps.append({
+                "step": 3,
+                "description": "Conexion TCP",
+                "status": "error",
+                "detail": f"No se pudo conectar a {resolved_ip}:{port}: {e}",
+                "elapsed_ms": elapsed,
+            })
+            # Still try HTTP — maybe a proxy/firewall allows HTTP but not raw TCP
+            steps.append({
+                "step": 4,
+                "description": "Login HTTP",
+                "status": "skip",
+                "detail": "Omitido por falla en conexion TCP",
+                "elapsed_ms": 0,
+            })
+            steps.append({
+                "step": 5,
+                "description": "Validacion de token",
+                "status": "skip",
+                "detail": "Omitido por falla en conexion TCP",
+                "elapsed_ms": 0,
+            })
+            return steps
+
+        # --- Paso 4: Request HTTP POST /api/v1/login ---
+        t0 = time.monotonic()
+        try:
+            async with self._client() as client:
+                resp = await client.post(
+                    f"{self.host}/api/v1/login",
+                    json={"username": self.username, "password": self.password},
+                )
+            elapsed = round((time.monotonic() - t0) * 1000, 1)
+            body_preview = resp.text[:300] if resp.text else "(vacio)"
+
+            if resp.status_code in (200, 201):
+                steps.append({
+                    "step": 4,
+                    "description": "Login HTTP",
+                    "status": "ok",
+                    "detail": f"HTTP {resp.status_code} — Respuesta: {body_preview}",
+                    "elapsed_ms": elapsed,
+                })
+                login_data = resp.json()
+            else:
+                steps.append({
+                    "step": 4,
+                    "description": "Login HTTP",
+                    "status": "error",
+                    "detail": f"HTTP {resp.status_code} — {body_preview}",
+                    "elapsed_ms": elapsed,
+                })
+                steps.append({
+                    "step": 5,
+                    "description": "Validacion de token",
+                    "status": "skip",
+                    "detail": "Omitido por falla en login",
+                    "elapsed_ms": 0,
+                })
+                return steps
+        except Exception as e:
+            elapsed = round((time.monotonic() - t0) * 1000, 1)
+            steps.append({
+                "step": 4,
+                "description": "Login HTTP",
+                "status": "error",
+                "detail": f"Error en request: {str(e)[:300]}",
+                "elapsed_ms": elapsed,
+            })
+            steps.append({
+                "step": 5,
+                "description": "Validacion de token",
+                "status": "skip",
+                "detail": "Omitido por falla en login",
+                "elapsed_ms": 0,
+            })
+            return steps
+
+        # --- Paso 5: Validacion del token recibido ---
+        t0 = time.monotonic()
+        token = login_data.get("token") or login_data.get("access_token")
+        elapsed = round((time.monotonic() - t0) * 1000, 1)
+        if token:
+            steps.append({
+                "step": 5,
+                "description": "Validacion de token",
+                "status": "ok",
+                "detail": f"Token recibido ({len(token)} caracteres)",
+                "elapsed_ms": elapsed,
+            })
+        else:
+            steps.append({
+                "step": 5,
+                "description": "Validacion de token",
+                "status": "error",
+                "detail": f"No se encontro token en la respuesta. Keys: {list(login_data.keys())}",
+                "elapsed_ms": elapsed,
+            })
+
+        return steps
 
     async def create_cert(self, cn: str, mail: str, password: str, profile_id: Optional[str] = None) -> dict:
         """Create a certificate in PacketFence.

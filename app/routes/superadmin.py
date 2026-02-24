@@ -131,7 +131,7 @@ async def test_connection(
     await validate_csrf(request)
 
     pf = await get_pf_client(db)
-    test_result = await pf.test_connection()
+    diagnostic_steps = await pf.test_connection_detailed()
 
     # Re-read settings for template
     pf_host = await _get_setting(db, "pf_host", settings.pf_host)
@@ -151,7 +151,7 @@ async def test_connection(
             pf_password_set=pf_password_set,
             pf_cert_profile=pf_cert_profile,
             pf_verify_ssl=pf_verify_ssl,
-            test_result=test_result,
+            diagnostic_steps=diagnostic_steps,
         ),
     )
 
