@@ -1,8 +1,8 @@
 services:
   cert-portal:
     build: .
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     volumes:
       - cert-portal-data:/app/data
       - cert-portal-certs:/app/certs
