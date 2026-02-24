@@ -3,8 +3,8 @@ services:
     build: .
     expose:
       - "8000"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - coolify
     volumes:
       - cert-portal-data:/app/data
       - cert-portal-certs:/app/certs
@@ -27,3 +27,7 @@ services:
 volumes:
   cert-portal-data:
   cert-portal-certs:
+
+networks:
+  coolify:
+    external: true
