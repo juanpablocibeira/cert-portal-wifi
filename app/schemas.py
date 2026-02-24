@@ -10,20 +10,39 @@ class LoginForm(BaseModel):
     password: str
 
 
+# --- Group ---
+class GroupOut(BaseModel):
+    id: int
+    name: str
+    description: str = ""
+    vlan: int
+    pf_role_name: Optional[str] = None
+    pf_category_id: Optional[int] = None
+    is_active: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 # --- User ---
 class UserCreate(BaseModel):
     username: str
     password: str
     full_name: str = ""
+    email: str = ""
     role: str = "student"
+    group_id: Optional[int] = None
 
 
 class UserOut(BaseModel):
     id: int
     username: str
     full_name: str
+    email: str = ""
     role: str
     is_active: bool
+    group_id: Optional[int] = None
+    created_by: Optional[int] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -43,10 +62,13 @@ class CertRequestOut(BaseModel):
     is_mobile: bool
     download_token: Optional[str] = None
     download_token_used: bool = False
+    pf_cert_id: Optional[str] = None
     reviewed_by: Optional[int] = None
     reviewed_at: Optional[datetime] = None
     reject_reason: Optional[str] = None
     revoked_at: Optional[datetime] = None
+    downloaded_at: Optional[datetime] = None
+    download_ip: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -66,6 +88,7 @@ class PFSettingsForm(BaseModel):
     pf_username: str
     pf_password: str
     pf_cert_profile: str
+    pf_verify_ssl: bool = False
 
 
 # --- Activity Log ---

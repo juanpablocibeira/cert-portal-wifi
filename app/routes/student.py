@@ -1,10 +1,12 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import decrypt_value, get_current_user, require_role
+from app.auth import decrypt_value, get_current_user, require_role, validate_csrf
 from app.config import settings
 from app.database import get_db
 from app.models import ActivityLog, CertRequest, User
@@ -19,7 +21,8 @@ def _ctx(request, user, **kwargs):
         "request": request,
         "user": user,
         "app_title": settings.app_title,
-        "current_year": 2026,
+        "current_year": datetime.now(timezone.utc).year,
+        "csrf_token": request.cookies.get("csrf_token", ""),
         **kwargs,
     }
 
@@ -58,6 +61,8 @@ async def create_request(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await validate_csrf(request)
+
     ua = request.headers.get("user-agent", "")
 
     if is_mobile(ua):
@@ -152,8 +157,11 @@ async def download_file(
     if not cert_req or cert_req.download_token_used:
         return RedirectResponse(url="/student/dashboard", status_code=302)
 
-    # Mark as used in the same transaction
+    # Mark as used and record download info
     cert_req.download_token_used = True
+    cert_req.downloaded_at = datetime.now(timezone.utc)
+    cert_req.download_ip = request.client.host if request.client else ""
+
     log = ActivityLog(
         user_id=current_user.id,
         action="cert_download",

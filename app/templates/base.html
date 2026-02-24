@@ -5,9 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Portal WiFi{% endblock %} — {{ app_title }}</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        [x-cloak] { display: none !important; }
-    </style>
     {% block head %}{% endblock %}
 </head>
 <body class="bg-gray-50 min-h-screen flex flex-col">
@@ -24,6 +21,7 @@
                     {% if user.role in ('employee', 'superadmin') %}
                         <a href="/employee/dashboard" class="hover:bg-indigo-600 px-3 py-2 rounded text-sm">Solicitudes</a>
                         <a href="/employee/users" class="hover:bg-indigo-600 px-3 py-2 rounded text-sm">Usuarios</a>
+                        <a href="/employee/groups" class="hover:bg-indigo-600 px-3 py-2 rounded text-sm">Grupos</a>
                     {% endif %}
                     {% if user.role == 'superadmin' %}
                         <a href="/superadmin/settings" class="hover:bg-indigo-600 px-3 py-2 rounded text-sm">Configuracion</a>

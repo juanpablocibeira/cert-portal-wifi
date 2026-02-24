@@ -1,9 +1,10 @@
-import datetime
 import functools
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from cryptography.fernet import Fernet
-from fastapi import Depends, HTTPException, Request, status
+from fastapi import Depends, Request
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy import select
@@ -18,6 +19,22 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 ALGORITHM = "HS256"
 
 
+# --- Custom exceptions for auth flow ---
+
+class AuthRedirectException(Exception):
+    """Raised when user is not authenticated and should be redirected to login."""
+    def __init__(self, redirect_url: str = "/login"):
+        self.redirect_url = redirect_url
+
+
+class ForbiddenException(Exception):
+    """Raised when user does not have the required role."""
+    def __init__(self, detail: str = "No tienes permisos para acceder a esta seccion."):
+        self.detail = detail
+
+
+# --- Password helpers ---
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
 
@@ -26,9 +43,11 @@ def verify_password(plain: str, hashed: str) -> bool:
     return pwd_context.verify(plain, hashed)
 
 
+# --- JWT ---
+
 def create_access_token(data: dict, expires_minutes: Optional[int] = None) -> str:
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + datetime.timedelta(
+    expire = datetime.now(timezone.utc) + timedelta(
         minutes=expires_minutes or settings.jwt_expire_minutes
     )
     to_encode["exp"] = expire
@@ -55,6 +74,8 @@ async def get_current_user(
     return user
 
 
+# --- Role-based access control ---
+
 def require_role(*roles: str):
     def decorator(func):
         @functools.wraps(func)
@@ -62,21 +83,35 @@ def require_role(*roles: str):
             request = kwargs.get("request") or (args[0] if args else None)
             user = kwargs.get("current_user")
             if not user:
-                raise HTTPException(
-                    status_code=status.HTTP_302_FOUND,
-                    headers={"Location": "/login"},
-                )
+                raise AuthRedirectException("/login")
             if user.role not in roles:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="No tienes permisos para acceder a esta seccion.",
-                )
+                raise ForbiddenException()
             return await func(*args, **kwargs)
 
         return wrapper
 
     return decorator
 
+
+# --- CSRF ---
+
+def generate_csrf_token() -> str:
+    return secrets.token_hex(32)
+
+
+async def validate_csrf(request: Request):
+    """Validate CSRF token from form data against cookie.
+
+    Raises ForbiddenException if tokens don't match.
+    """
+    form = await request.form()
+    form_token = form.get("csrf_token", "")
+    cookie_token = request.cookies.get("csrf_token", "")
+    if not form_token or not cookie_token or form_token != cookie_token:
+        raise ForbiddenException("Token CSRF invalido. Recarga la pagina e intenta de nuevo.")
+
+
+# --- Fernet encryption ---
 
 def _get_fernet() -> Fernet:
     return Fernet(settings.fernet_key.encode())

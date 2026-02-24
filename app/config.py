@@ -10,11 +10,13 @@ class Settings(BaseSettings):
 
     superadmin_username: str = "admin"
     superadmin_password: str = "admin"
+    superadmin_email: str = ""
 
     pf_host: str = "https://localhost:9999"
     pf_username: str = "admin"
     pf_password: str = ""
     pf_cert_profile: str = "default"
+    pf_verify_ssl: bool = False
 
     jwt_expire_minutes: int = 480
 

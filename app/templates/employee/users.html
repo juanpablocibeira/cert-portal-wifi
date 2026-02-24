@@ -10,33 +10,49 @@
     <!-- Create user form -->
     <div class="bg-white border rounded-xl p-6 mb-6 shadow-sm">
         <h2 class="text-lg font-semibold text-gray-700 mb-4">Crear Usuario</h2>
-        <form method="POST" action="/employee/users/create" class="grid grid-cols-1 md:grid-cols-5 gap-4 items-end">
-            <div>
-                <label class="block text-sm font-medium text-gray-600 mb-1">Usuario</label>
-                <input type="text" name="username" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-600 mb-1">Contrasena</label>
-                <input type="password" name="password" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-600 mb-1">Nombre completo</label>
-                <input type="text" name="full_name" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-600 mb-1">Rol</label>
-                <select name="role" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
-                    <option value="student">Alumno</option>
-                    <option value="employee">Empleado</option>
-                    {% if user.role == 'superadmin' %}
-                    <option value="superadmin">Superadmin</option>
-                    {% endif %}
-                </select>
-            </div>
-            <div>
-                <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition">
-                    Crear
-                </button>
+        <form method="POST" action="/employee/users/create" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Usuario</label>
+                    <input type="text" name="username" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Contrasena</label>
+                    <input type="password" name="password" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Nombre completo</label>
+                    <input type="text" name="full_name" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Email</label>
+                    <input type="email" name="email" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="usuario@ejemplo.com">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Rol</label>
+                    <select name="role" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="student">Alumno</option>
+                        <option value="employee">Empleado</option>
+                        {% if user.role == 'superadmin' %}
+                        <option value="superadmin">Superadmin</option>
+                        {% endif %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Grupo</label>
+                    <select name="group_id" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="">Sin grupo</option>
+                        {% for g in groups %}
+                        <option value="{{ g.id }}">{{ g.name }} (VLAN {{ g.vlan }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex items-end">
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition">
+                        Crear
+                    </button>
+                </div>
             </div>
         </form>
     </div>
@@ -44,8 +60,9 @@
     <!-- Import CSV -->
     <div class="bg-white border rounded-xl p-6 mb-6 shadow-sm">
         <h2 class="text-lg font-semibold text-gray-700 mb-2">Importar Alumnos desde CSV</h2>
-        <p class="text-gray-500 text-sm mb-4">Formato: una columna con nombre de usuario por linea (sin encabezado). Se generaran contrasenas aleatorias.</p>
+        <p class="text-gray-500 text-sm mb-4">Formato CSV: <code class="bg-gray-100 px-1 rounded">usuario, nombre, apellido, email, grupo</code> (una fila por alumno, sin encabezado). La columna grupo es opcional. Se generaran contrasenas aleatorias.</p>
         <form method="POST" action="/employee/users/import-csv" enctype="multipart/form-data" class="flex items-end gap-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
             <div class="flex-1">
                 <input type="file" name="csv_file" accept=".csv,.txt" required
                        class="w-full border rounded-lg px-3 py-2 text-sm file:mr-4 file:py-1 file:px-3 file:rounded file:border-0 file:bg-indigo-50 file:text-indigo-700 file:font-medium">
@@ -69,6 +86,8 @@
             <thead class="text-green-700">
                 <tr>
                     <th class="text-left py-1">Usuario</th>
+                    <th class="text-left py-1">Nombre</th>
+                    <th class="text-left py-1">Email</th>
                     <th class="text-left py-1">Contrasena generada</th>
                 </tr>
             </thead>
@@ -76,6 +95,8 @@
                 {% for u in imported_users %}
                 <tr class="border-t border-green-200">
                     <td class="py-1.5">{{ u.username }}</td>
+                    <td class="py-1.5">{{ u.full_name }}</td>
+                    <td class="py-1.5">{{ u.email }}</td>
                     <td class="py-1.5 font-mono">{{ u.password }}</td>
                 </tr>
                 {% endfor %}
@@ -85,8 +106,8 @@
     <script>
     function downloadImportedCSV() {
         const users = {{ imported_users | tojson }};
-        let csv = "usuario,contrasena\n";
-        users.forEach(u => { csv += u.username + "," + u.password + "\n"; });
+        let csv = "usuario,nombre,email,contrasena\n";
+        users.forEach(u => { csv += u.username + "," + u.full_name + "," + u.email + "," + u.password + "\n"; });
         const blob = new Blob([csv], {type: 'text/csv'});
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
@@ -104,10 +125,12 @@
                     <th class="px-4 py-3 text-left">ID</th>
                     <th class="px-4 py-3 text-left">Usuario</th>
                     <th class="px-4 py-3 text-left">Nombre</th>
+                    <th class="px-4 py-3 text-left">Email</th>
                     <th class="px-4 py-3 text-left">Rol</th>
+                    <th class="px-4 py-3 text-left">Grupo</th>
                     <th class="px-4 py-3 text-left">Estado</th>
                     <th class="px-4 py-3 text-left">Creado</th>
-                    <th class="px-4 py-3 text-left">Accion</th>
+                    <th class="px-4 py-3 text-left">Acciones</th>
                 </tr>
             </thead>
             <tbody class="divide-y">
@@ -116,6 +139,7 @@
                     <td class="px-4 py-3 text-gray-500">{{ u.id }}</td>
                     <td class="px-4 py-3 font-medium">{{ u.username }}</td>
                     <td class="px-4 py-3">{{ u.full_name }}</td>
+                    <td class="px-4 py-3 text-gray-500">{{ u.email }}</td>
                     <td class="px-4 py-3">
                         {% if u.role == 'superadmin' %}
                             <span class="text-purple-700 font-medium">Superadmin</span>
@@ -123,6 +147,13 @@
                             <span class="text-blue-700">Empleado</span>
                         {% else %}
                             <span class="text-gray-600">Alumno</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        {% if u.group %}
+                            <span class="text-indigo-600 text-xs font-medium">{{ u.group.name }}</span>
+                        {% else %}
+                            <span class="text-gray-400 text-xs">—</span>
                         {% endif %}
                     </td>
                     <td class="px-4 py-3">
@@ -134,17 +165,22 @@
                     </td>
                     <td class="px-4 py-3 text-gray-500">{{ u.created_at.strftime('%d/%m/%Y') }}</td>
                     <td class="px-4 py-3">
-                        {% if u.id != user.id %}
-                        <form method="POST" action="/employee/users/toggle/{{ u.id }}">
-                            {% if u.is_active %}
-                                <button class="text-red-600 hover:text-red-800 text-xs font-medium">Desactivar</button>
+                        <div class="flex gap-2">
+                            {% if u.id != user.id %}
+                            <button onclick="openEditModal({{ u.id }}, '{{ u.full_name }}', '{{ u.email }}', {{ u.group_id or 0 }})"
+                                    class="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Editar</button>
+                            <form method="POST" action="/employee/users/toggle/{{ u.id }}">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                {% if u.is_active %}
+                                    <button class="text-red-600 hover:text-red-800 text-xs font-medium">Desactivar</button>
+                                {% else %}
+                                    <button class="text-green-600 hover:text-green-800 text-xs font-medium">Activar</button>
+                                {% endif %}
+                            </form>
                             {% else %}
-                                <button class="text-green-600 hover:text-green-800 text-xs font-medium">Activar</button>
+                                <span class="text-gray-400 text-xs">Tu cuenta</span>
                             {% endif %}
-                        </form>
-                        {% else %}
-                            <span class="text-gray-400 text-xs">Tu cuenta</span>
-                        {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% endfor %}
@@ -152,4 +188,60 @@
         </table>
     </div>
 </div>
+
+<!-- Edit User Modal -->
+<div id="editModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display:none;">
+    <div class="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Editar Usuario</h2>
+        <form id="editForm" method="POST" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Nombre completo</label>
+                <input type="text" name="full_name" id="edit_full_name" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Email</label>
+                <input type="email" name="email" id="edit_email" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Nueva contrasena (dejar vacio para no cambiar)</label>
+                <input type="password" name="password" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Dejar vacio para mantener">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Grupo</label>
+                <select name="group_id" id="edit_group_id" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+                    <option value="">Sin grupo</option>
+                    {% for g in groups %}
+                    <option value="{{ g.id }}">{{ g.name }} (VLAN {{ g.vlan }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="flex gap-3 justify-end">
+                <button type="button" onclick="closeEditModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-lg text-sm transition">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openEditModal(userId, fullName, email, groupId) {
+    document.getElementById('editForm').action = '/employee/users/edit/' + userId;
+    document.getElementById('edit_full_name').value = fullName;
+    document.getElementById('edit_email').value = email;
+    document.getElementById('edit_group_id').value = groupId || '';
+    const modal = document.getElementById('editModal');
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+}
+function closeEditModal() {
+    const modal = document.getElementById('editModal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+}
+// Close modal on backdrop click
+document.getElementById('editModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditModal();
+});
+</script>
 {% endblock %}

@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block title %}Grupos{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto px-4 py-8">
+    <div class="flex items-center justify-between mb-6">
+        <h1 class="text-2xl font-bold text-gray-800">Gestion de Grupos</h1>
+    </div>
+
+    <!-- Create group form -->
+    <div class="bg-white border rounded-xl p-6 mb-6 shadow-sm">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Crear Grupo</h2>
+        <form method="POST" action="/employee/groups/create" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Nombre del grupo</label>
+                    <input type="text" name="name" required class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ej: Alumnos Secundaria">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">VLAN</label>
+                    <input type="number" name="vlan" required min="0" max="4094" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Ej: 90">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Descripcion</label>
+                    <input type="text" name="description" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="Opcional">
+                </div>
+                <div class="flex items-end">
+                    <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 rounded-lg text-sm transition">
+                        Crear Grupo
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+
+    <!-- Groups table -->
+    <div class="bg-white border rounded-xl overflow-hidden shadow-sm">
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50 text-gray-600">
+                <tr>
+                    <th class="px-4 py-3 text-left">ID</th>
+                    <th class="px-4 py-3 text-left">Nombre</th>
+                    <th class="px-4 py-3 text-left">VLAN</th>
+                    <th class="px-4 py-3 text-left">Rol PF</th>
+                    <th class="px-4 py-3 text-left">Category ID</th>
+                    <th class="px-4 py-3 text-left">Usuarios</th>
+                    <th class="px-4 py-3 text-left">Estado</th>
+                    <th class="px-4 py-3 text-left">Acciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y">
+                {% for g in groups %}
+                <tr class="hover:bg-gray-50 {% if not g.is_active %}opacity-50{% endif %}">
+                    <td class="px-4 py-3 text-gray-500">{{ g.id }}</td>
+                    <td class="px-4 py-3 font-medium">{{ g.name }}</td>
+                    <td class="px-4 py-3">{{ g.vlan }}</td>
+                    <td class="px-4 py-3 text-gray-500 font-mono text-xs">{{ g.pf_role_name or '—' }}</td>
+                    <td class="px-4 py-3">
+                        {% if g.pf_category_id is not none %}
+                            <span class="text-green-600 font-medium">{{ g.pf_category_id }}</span>
+                        {% else %}
+                            <span class="text-yellow-600">Sin sincronizar</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">{{ user_counts.get(g.id, 0) }}</td>
+                    <td class="px-4 py-3">
+                        {% if g.is_active %}
+                            <span class="text-green-600 font-medium">Activo</span>
+                        {% else %}
+                            <span class="text-red-500">Inactivo</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="flex gap-2">
+                            {% if g.is_active %}
+                            <button onclick="openEditGroupModal({{ g.id }}, '{{ g.description|e }}', {{ g.vlan }})"
+                                    class="text-indigo-600 hover:text-indigo-800 text-xs font-medium">Editar</button>
+                            <form method="POST" action="/employee/groups/sync/{{ g.id }}" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button class="text-blue-600 hover:text-blue-800 text-xs font-medium">Sincronizar</button>
+                            </form>
+                            {% if user.role == 'superadmin' %}
+                            <form method="POST" action="/employee/groups/delete/{{ g.id }}" class="inline"
+                                  onsubmit="return confirm('Seguro que deseas eliminar este grupo? Se eliminara el role en PacketFence.')">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button class="text-red-600 hover:text-red-800 text-xs font-medium">Eliminar</button>
+                            </form>
+                            {% endif %}
+                            {% else %}
+                                <span class="text-gray-400 text-xs">Eliminado</span>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not groups %}
+                <tr>
+                    <td colspan="8" class="px-4 py-8 text-center text-gray-400">No hay grupos creados.</td>
+                </tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Edit Group Modal -->
+<div id="editGroupModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50" style="display:none;">
+    <div class="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
+        <h2 class="text-lg font-semibold text-gray-700 mb-4">Editar Grupo</h2>
+        <form id="editGroupForm" method="POST" class="space-y-4">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">Descripcion</label>
+                <input type="text" name="description" id="edit_group_description" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-600 mb-1">VLAN</label>
+                <input type="number" name="vlan" id="edit_group_vlan" min="0" max="4094" class="w-full border rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 outline-none">
+            </div>
+            <div class="flex gap-3 justify-end">
+                <button type="button" onclick="closeEditGroupModal()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">Cancelar</button>
+                <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-6 py-2 rounded-lg text-sm transition">Guardar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function openEditGroupModal(groupId, description, vlan) {
+    document.getElementById('editGroupForm').action = '/employee/groups/edit/' + groupId;
+    document.getElementById('edit_group_description').value = description;
+    document.getElementById('edit_group_vlan').value = vlan;
+    const modal = document.getElementById('editGroupModal');
+    modal.style.display = 'flex';
+    modal.classList.remove('hidden');
+}
+function closeEditGroupModal() {
+    const modal = document.getElementById('editGroupModal');
+    modal.style.display = 'none';
+    modal.classList.add('hidden');
+}
+document.getElementById('editGroupModal').addEventListener('click', function(e) {
+    if (e.target === this) closeEditGroupModal();
+});
+</script>
+{% endblock %}

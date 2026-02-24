@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -17,7 +19,13 @@ limiter = Limiter(key_func=get_remote_address)
 
 
 def _ctx(request: Request, **kwargs):
-    return {"request": request, "app_title": settings.app_title, "current_year": 2026, **kwargs}
+    return {
+        "request": request,
+        "app_title": settings.app_title,
+        "current_year": datetime.now(timezone.utc).year,
+        "csrf_token": request.cookies.get("csrf_token", ""),
+        **kwargs,
+    }
 
 
 @router.get("/login", response_class=HTMLResponse)
@@ -51,7 +59,7 @@ async def login_post(request: Request, db: AsyncSession = Depends(get_db)):
     log = ActivityLog(
         user_id=user.id,
         action="login",
-        detail=f"Inicio de sesion exitoso",
+        detail="Inicio de sesion exitoso",
         ip_address=request.client.host if request.client else "",
     )
     db.add(log)
@@ -73,6 +81,7 @@ async def login_post(request: Request, db: AsyncSession = Depends(get_db)):
 async def logout(request: Request):
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie("access_token")
+    response.delete_cookie("csrf_token")
     return response
 
 

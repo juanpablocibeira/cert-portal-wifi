@@ -1,14 +1,22 @@
+from datetime import datetime, timezone
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user, require_role
+from app.auth import (
+    decrypt_value,
+    encrypt_value,
+    get_current_user,
+    require_role,
+    validate_csrf,
+)
 from app.config import settings
 from app.database import get_db
 from app.models import ActivityLog, AppSetting, User
-from app.services.packetfence import PacketFenceClient
+from app.services.packetfence import get_pf_client
 
 router = APIRouter(prefix="/superadmin")
 templates = Jinja2Templates(directory="app/templates")
@@ -19,7 +27,8 @@ def _ctx(request, user, **kwargs):
         "request": request,
         "user": user,
         "app_title": settings.app_title,
-        "current_year": 2026,
+        "current_year": datetime.now(timezone.utc).year,
+        "csrf_token": request.cookies.get("csrf_token", ""),
         **kwargs,
     }
 
@@ -27,16 +36,26 @@ def _ctx(request, user, **kwargs):
 async def _get_setting(db, key: str, default: str = "") -> str:
     result = await db.execute(select(AppSetting).where(AppSetting.key == key))
     s = result.scalar_one_or_none()
-    return s.value if s else default
+    if not s:
+        return default
+    # Decrypt pf_password
+    if key == "pf_password" and s.value:
+        try:
+            return decrypt_value(s.value)
+        except Exception:
+            return s.value
+    return s.value
 
 
 async def _set_setting(db, key: str, value: str):
     result = await db.execute(select(AppSetting).where(AppSetting.key == key))
     s = result.scalar_one_or_none()
+    # Encrypt pf_password
+    store_value = encrypt_value(value) if key == "pf_password" else value
     if s:
-        s.value = value
+        s.value = store_value
     else:
-        db.add(AppSetting(key=key, value=value))
+        db.add(AppSetting(key=key, value=store_value))
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -48,8 +67,12 @@ async def settings_page(
 ):
     pf_host = await _get_setting(db, "pf_host", settings.pf_host)
     pf_username = await _get_setting(db, "pf_username", settings.pf_username)
-    pf_password = await _get_setting(db, "pf_password", settings.pf_password)
     pf_cert_profile = await _get_setting(db, "pf_cert_profile", settings.pf_cert_profile)
+    pf_verify_ssl = (await _get_setting(db, "pf_verify_ssl", str(settings.pf_verify_ssl))).lower() in ("true", "1", "yes")
+
+    # Password enmascarado — no enviamos el valor real al template
+    raw_pw = await _get_setting(db, "pf_password", "")
+    pf_password_set = bool(raw_pw)
 
     return templates.TemplateResponse(
         "employee/settings.html",
@@ -58,8 +81,9 @@ async def settings_page(
             current_user,
             pf_host=pf_host,
             pf_username=pf_username,
-            pf_password=pf_password,
+            pf_password_set=pf_password_set,
             pf_cert_profile=pf_cert_profile,
+            pf_verify_ssl=pf_verify_ssl,
         ),
     )
 
@@ -71,6 +95,8 @@ async def save_settings(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await validate_csrf(request)
+
     form = await request.form()
     await _set_setting(db, "pf_host", form.get("pf_host", "").strip())
     await _set_setting(db, "pf_username", form.get("pf_username", "").strip())
@@ -81,6 +107,7 @@ async def save_settings(
         await _set_setting(db, "pf_password", pw)
 
     await _set_setting(db, "pf_cert_profile", form.get("pf_cert_profile", "").strip())
+    await _set_setting(db, "pf_verify_ssl", "true" if form.get("pf_verify_ssl") else "false")
 
     log = ActivityLog(
         user_id=current_user.id,
@@ -101,18 +128,18 @@ async def test_connection(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    await validate_csrf(request)
+
+    pf = await get_pf_client(db)
+    test_result = await pf.test_connection()
+
+    # Re-read settings for template
     pf_host = await _get_setting(db, "pf_host", settings.pf_host)
     pf_username = await _get_setting(db, "pf_username", settings.pf_username)
-    pf_password = await _get_setting(db, "pf_password", settings.pf_password)
     pf_cert_profile = await _get_setting(db, "pf_cert_profile", settings.pf_cert_profile)
-
-    pf = PacketFenceClient(
-        host=pf_host,
-        username=pf_username,
-        password=pf_password,
-        cert_profile=pf_cert_profile,
-    )
-    test_result = await pf.test_connection()
+    pf_verify_ssl = (await _get_setting(db, "pf_verify_ssl", str(settings.pf_verify_ssl))).lower() in ("true", "1", "yes")
+    raw_pw = await _get_setting(db, "pf_password", "")
+    pf_password_set = bool(raw_pw)
 
     return templates.TemplateResponse(
         "employee/settings.html",
@@ -121,8 +148,9 @@ async def test_connection(
             current_user,
             pf_host=pf_host,
             pf_username=pf_username,
-            pf_password=pf_password,
+            pf_password_set=pf_password_set,
             pf_cert_profile=pf_cert_profile,
+            pf_verify_ssl=pf_verify_ssl,
             test_result=test_result,
         ),
     )
