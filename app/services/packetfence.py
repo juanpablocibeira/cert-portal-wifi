@@ -262,31 +262,47 @@ class PacketFenceClient:
 
         Returns dict with "p12_bytes" and "cert_id".
         """
+        used_profile = str(profile_id or self.cert_profile)
+        payload = {
+            "cn": cn,
+            "mail": mail,
+            "profile_id": used_profile,
+            "p12_password": password,
+        }
+        print(f"[PF-CERT] POST /api/v1/pki/certs payload={payload}")
+
         # Step 1: create the cert (profile_id must be a string)
-        resp = await self._request(
-            "POST",
-            "/api/v1/pki/certs",
-            json={
-                "cn": cn,
-                "mail": mail,
-                "profile_id": str(profile_id or self.cert_profile),
-                "p12_password": password,
-            },
-        )
-        # PF returns 422 on success (quirk), but also includes the cert data
+        resp = await self._request("POST", "/api/v1/pki/certs", json=payload)
+
+        print(f"[PF-CERT] Response HTTP {resp.status_code}")
+        print(f"[PF-CERT] Response body: {resp.text[:1000]}")
+
         data = resp.json()
         items = data.get("items", [])
         if not items:
-            raise ValueError(f"PacketFence no devolvio certificado. Status: {data.get('status')}, Error: {data.get('error', '')}")
+            # Log all keys and values for debugging
+            raise ValueError(
+                f"PacketFence no devolvio certificado. "
+                f"HTTP={resp.status_code}, "
+                f"profile_id={used_profile}, "
+                f"keys={list(data.keys())}, "
+                f"status={data.get('status')}, "
+                f"message={data.get('message', '')}, "
+                f"error={data.get('error', '')}, "
+                f"body={resp.text[:500]}"
+            )
 
         cert_id = str(items[0].get("ID", ""))
         if not cert_id:
             raise ValueError(f"PacketFence no devolvio ID de certificado. Keys: {list(items[0].keys())}")
 
-        logger.info(f"Certificado creado en PF: ID={cert_id}, CN={cn}")
+        print(f"[PF-CERT] Certificado creado: ID={cert_id}, CN={cn}")
 
         # Step 2: download the .p12 binary
+        print(f"[PF-CERT] GET /api/v1/pki/cert/{cert_id}/download/p12 ...")
         p12_resp = await self._request("GET", f"/api/v1/pki/cert/{cert_id}/download/p12")
+        print(f"[PF-CERT] Download HTTP {p12_resp.status_code}, size={len(p12_resp.content)} bytes")
+
         if p12_resp.status_code != 200 or len(p12_resp.content) == 0:
             raise ValueError(f"No se pudo descargar el .p12 para cert ID {cert_id}. HTTP {p12_resp.status_code}, Size: {len(p12_resp.content)}")
 

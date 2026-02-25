@@ -1,3 +1,4 @@
+import logging
 import os
 import re
 import secrets
@@ -5,6 +6,7 @@ import string
 import unicodedata
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -17,6 +19,8 @@ from app.config import settings
 from app.database import get_db
 from app.models import ActivityLog, CertRequest, Group, User
 from app.services.packetfence import get_pf_client
+
+logger = logging.getLogger("cert-portal.employee")
 
 router = APIRouter(prefix="/employee")
 templates = Jinja2Templates(directory="app/templates")
@@ -73,9 +77,23 @@ async def dashboard(
     )
     history = result_history.scalars().all()
 
+    error_msg = request.query_params.get("error", "")
+    success_msg = request.query_params.get("success", "")
+
+    # Ultimos errores de aprobacion (para debug)
+    recent_errors_result = await db.execute(
+        select(ActivityLog)
+        .where(ActivityLog.action == "cert_approve_error")
+        .order_by(ActivityLog.created_at.desc())
+        .limit(5)
+    )
+    recent_errors = recent_errors_result.scalars().all()
+
     return templates.TemplateResponse(
         "employee/dashboard.html",
-        _ctx(request, current_user, pending=pending, history=history),
+        _ctx(request, current_user, pending=pending, history=history,
+             error_msg=error_msg, success_msg=success_msg,
+             recent_errors=recent_errors),
     )
 
 
@@ -91,40 +109,60 @@ async def approve_request(
     db: AsyncSession = Depends(get_db),
 ):
     await validate_csrf(request)
+    print(f"[APPROVE] === Inicio aprobacion solicitud #{req_id} ===")
 
     result = await db.execute(
         select(CertRequest).where(CertRequest.id == req_id, CertRequest.status == "pendiente")
     )
     cert_req = result.scalar_one_or_none()
     if not cert_req:
+        print(f"[APPROVE] Solicitud #{req_id} no encontrada o ya no esta pendiente")
         return RedirectResponse(url="/employee/dashboard", status_code=302)
+
+    print(f"[APPROVE] Solicitud encontrada: user={cert_req.user.username}, user_id={cert_req.user_id}")
 
     # Generate password and call PacketFence
     cert_password = _generate_password(16)
     cn = f"{cert_req.user.username}-{cert_req.id}"
     mail = cert_req.user.email or f"{cert_req.user.username}@cert.local"
+    print(f"[APPROVE] CN={cn}, mail={mail}")
 
     try:
+        print(f"[APPROVE] Paso 1: Obteniendo cliente PF...")
         pf = await get_pf_client(db)
+        print(f"[APPROVE] Cliente PF OK: host={pf.host}, profile={pf.cert_profile}")
+
+        print(f"[APPROVE] Paso 2: Creando certificado en PF...")
         pf_result = await pf.create_cert(cn=cn, mail=mail, password=cert_password)
         p12_bytes = pf_result["p12_bytes"]
         pf_cert_id = pf_result.get("cert_id", "")
+        print(f"[APPROVE] Paso 2 OK: cert_id={pf_cert_id}, p12_size={len(p12_bytes)} bytes")
     except Exception as e:
+        import traceback
+        error_detail = str(e)[:300]
+        tb = traceback.format_exc()
+        print(f"[APPROVE] ERROR en creacion de certificado:")
+        print(f"[APPROVE]   Exception: {error_detail}")
+        print(f"[APPROVE]   Traceback:\n{tb}")
+        logger.error(f"[APPROVE] Error solicitud #{req_id}: {error_detail}")
         log = ActivityLog(
             user_id=current_user.id,
             action="cert_approve_error",
-            detail=f"Error al crear certificado en PF para solicitud #{req_id}: {str(e)[:200]}",
+            detail=f"Error PF solicitud #{req_id}: {error_detail}",
             ip_address=request.client.host if request.client else "",
         )
         db.add(log)
         await db.commit()
-        return RedirectResponse(url="/employee/dashboard", status_code=302)
+        error_msg = quote(f"Error al crear certificado en PacketFence: {error_detail}")
+        return RedirectResponse(url=f"/employee/dashboard?error={error_msg}", status_code=302)
 
     # Save .p12 file
+    print(f"[APPROVE] Paso 3: Guardando archivo .p12...")
     os.makedirs(CERTS_DIR, exist_ok=True)
     file_path = os.path.join(CERTS_DIR, f"{cn}.p12")
     with open(file_path, "wb") as f:
         f.write(p12_bytes)
+    print(f"[APPROVE] Paso 3 OK: {file_path}")
 
     # Update request
     cert_req.status = "aprobada"
@@ -134,11 +172,13 @@ async def approve_request(
     cert_req.pf_cert_id = pf_cert_id
     cert_req.reviewed_by = current_user.id
     cert_req.reviewed_at = datetime.now(timezone.utc)
+    print(f"[APPROVE] Paso 4: Request actualizada en DB")
 
     # Create PF user with group info if available
     pf_user_detail = ""
     if cert_req.user.group and cert_req.user.group.pf_role_name:
         try:
+            print(f"[APPROVE] Paso 5: Creando usuario PF (grupo={cert_req.user.group.name}, role={cert_req.user.group.pf_role_name})...")
             name_parts = (cert_req.user.full_name or cert_req.user.username).split(" ", 1)
             firstname = name_parts[0]
             lastname = name_parts[1] if len(name_parts) > 1 else ""
@@ -150,8 +190,12 @@ async def approve_request(
                 category_id=cert_req.user.group.pf_category_id,
             )
             pf_user_detail = f", usuario PF creado con role={cert_req.user.group.pf_role_name}"
+            print(f"[APPROVE] Paso 5 OK: usuario PF creado")
         except Exception as e:
             pf_user_detail = f", error creando usuario PF: {str(e)[:100]}"
+            print(f"[APPROVE] Paso 5 WARNING: {pf_user_detail}")
+    else:
+        print(f"[APPROVE] Paso 5: Sin grupo/role PF, saltando creacion usuario PF")
 
     group_detail = ""
     if cert_req.user.group:
@@ -165,8 +209,10 @@ async def approve_request(
     )
     db.add(log)
     await db.commit()
+    print(f"[APPROVE] === Solicitud #{req_id} aprobada exitosamente ===")
 
-    return RedirectResponse(url="/employee/dashboard", status_code=302)
+    success_msg = quote(f"Certificado aprobado para {cert_req.user.username} (solicitud #{req_id})")
+    return RedirectResponse(url=f"/employee/dashboard?success={success_msg}", status_code=302)
 
 
 # --- Reject ---

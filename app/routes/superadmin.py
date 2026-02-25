@@ -156,6 +156,49 @@ async def test_connection(
     )
 
 
+@router.post("/list-profiles")
+@require_role("superadmin")
+async def list_profiles(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await validate_csrf(request)
+
+    pf = await get_pf_client(db)
+    profiles = []
+    profiles_error = ""
+    try:
+        profiles = await pf.list_profiles()
+        print(f"[PF-PROFILES] Perfiles encontrados: {profiles}")
+    except Exception as e:
+        profiles_error = str(e)[:300]
+        print(f"[PF-PROFILES] Error: {profiles_error}")
+
+    # Re-read settings for template
+    pf_host = await _get_setting(db, "pf_host", settings.pf_host)
+    pf_username = await _get_setting(db, "pf_username", settings.pf_username)
+    pf_cert_profile = await _get_setting(db, "pf_cert_profile", settings.pf_cert_profile)
+    pf_verify_ssl = (await _get_setting(db, "pf_verify_ssl", str(settings.pf_verify_ssl))).lower() in ("true", "1", "yes")
+    raw_pw = await _get_setting(db, "pf_password", "")
+    pf_password_set = bool(raw_pw)
+
+    return templates.TemplateResponse(
+        "employee/settings.html",
+        _ctx(
+            request,
+            current_user,
+            pf_host=pf_host,
+            pf_username=pf_username,
+            pf_password_set=pf_password_set,
+            pf_cert_profile=pf_cert_profile,
+            pf_verify_ssl=pf_verify_ssl,
+            pki_profiles=profiles,
+            profiles_error=profiles_error,
+        ),
+    )
+
+
 @router.get("/logs", response_class=HTMLResponse)
 @require_role("superadmin")
 async def logs_page(
