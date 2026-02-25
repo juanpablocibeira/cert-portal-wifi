@@ -309,51 +309,110 @@ class PacketFenceClient:
         # Step 3: Re-package .p12 with our password
         # PacketFence may ignore the p12_password param and use its own,
         # so we re-encrypt with the password we want to give the user.
-        p12_bytes = self._repackage_p12(p12_resp.content, password)
+        p12_bytes = self._repackage_p12(p12_resp.content, password, original_password=password)
 
         return {"p12_bytes": p12_bytes, "cert_id": cert_id}
 
     @staticmethod
-    def _repackage_p12(original_p12: bytes, new_password: str) -> bytes:
+    def _repackage_p12(original_p12: bytes, new_password: str, original_password: str = "") -> bytes:
         """Re-encrypt a .p12 file with a new password.
 
         PacketFence may use its own password for the .p12 file, so we
         try common passwords to open it, then re-export with our password.
+        Falls back to openssl CLI for legacy algorithm support.
         """
+        import subprocess
+        import tempfile
         from cryptography.hazmat.primitives.serialization import pkcs12, BestAvailableEncryption
 
-        # Passwords to try when opening the original .p12 from PF
-        candidates = [None, b"", b"secret", b"changeit", b"password", b"pfcert"]
+        # Passwords to try: include the one we sent to PF first
+        candidates = [
+            original_password.encode() if original_password else b"",
+            None, b"", b"secret", b"changeit", b"password", b"pfcert",
+        ]
 
         private_key = None
         certificate = None
         cas = None
+        last_error = ""
 
         for candidate in candidates:
             try:
                 private_key, certificate, cas = pkcs12.load_key_and_certificates(
                     original_p12, candidate
                 )
-                print(f"[PF-CERT] p12 abierto con password: {candidate!r}")
+                print(f"[PF-CERT] p12 abierto con password (cryptography): {candidate!r}")
                 break
-            except Exception:
+            except Exception as e:
+                last_error = f"{candidate!r} -> {type(e).__name__}: {str(e)[:150]}"
                 continue
 
-        if private_key is None or certificate is None:
-            # Could not open with any known password — return original
-            print("[PF-CERT] WARNING: No se pudo abrir el p12 para re-empaquetar, retornando original")
-            return original_p12
+        if private_key is not None and certificate is not None:
+            # Re-export with the desired password
+            repackaged = pkcs12.serialize_key_and_certificates(
+                name=None,
+                key=private_key,
+                cert=certificate,
+                cas=cas,
+                encryption_algorithm=BestAvailableEncryption(new_password.encode()),
+            )
+            print(f"[PF-CERT] p12 re-empaquetado con nueva password, size={len(repackaged)} bytes")
+            return repackaged
 
-        # Re-export with the desired password
-        repackaged = pkcs12.serialize_key_and_certificates(
-            name=None,
-            key=private_key,
-            cert=certificate,
-            cas=cas,
-            encryption_algorithm=BestAvailableEncryption(new_password.encode()),
-        )
-        print(f"[PF-CERT] p12 re-empaquetado con nueva password, size={len(repackaged)} bytes")
-        return repackaged
+        # cryptography library failed (likely legacy algorithms like RC2)
+        # Fall back to openssl CLI which handles legacy formats
+        print(f"[PF-CERT] cryptography no pudo abrir p12 (last: {last_error})")
+        print(f"[PF-CERT] Intentando con openssl CLI...")
+
+        for try_pass in [original_password, "", "secret", "changeit", "password"]:
+            try:
+                with tempfile.NamedTemporaryFile(suffix=".p12", delete=False) as f_in:
+                    f_in.write(original_p12)
+                    in_path = f_in.name
+                with tempfile.NamedTemporaryFile(suffix=".pem", delete=False) as f_pem:
+                    pem_path = f_pem.name
+                with tempfile.NamedTemporaryFile(suffix=".p12", delete=False) as f_out:
+                    out_path = f_out.name
+
+                # Extract to PEM (openssl handles legacy RC2 etc.)
+                extract_cmd = [
+                    "openssl", "pkcs12", "-in", in_path, "-out", pem_path,
+                    "-nodes", "-passin", f"pass:{try_pass}",
+                ]
+                result = subprocess.run(extract_cmd, capture_output=True, timeout=10)
+                if result.returncode != 0:
+                    print(f"[PF-CERT] openssl extract failed with pass={try_pass!r}: {result.stderr.decode()[:200]}")
+                    continue
+
+                print(f"[PF-CERT] openssl extract OK con pass={try_pass!r}")
+
+                # Re-export as .p12 with our password
+                export_cmd = [
+                    "openssl", "pkcs12", "-export",
+                    "-in", pem_path, "-out", out_path,
+                    "-passout", f"pass:{new_password}",
+                ]
+                result = subprocess.run(export_cmd, capture_output=True, timeout=10)
+                if result.returncode != 0:
+                    print(f"[PF-CERT] openssl export failed: {result.stderr.decode()[:200]}")
+                    continue
+
+                with open(out_path, "rb") as f:
+                    repackaged = f.read()
+                print(f"[PF-CERT] p12 re-empaquetado via openssl, size={len(repackaged)} bytes")
+                return repackaged
+            except Exception as e:
+                print(f"[PF-CERT] openssl attempt failed (pass={try_pass!r}): {e}")
+            finally:
+                import os
+                for p in [in_path, pem_path, out_path]:
+                    try:
+                        os.unlink(p)
+                    except Exception:
+                        pass
+
+        print("[PF-CERT] WARNING: No se pudo re-empaquetar el p12 por ningun metodo")
+        return original_p12
 
     async def revoke_cert(self, cert_id: str, reason: int = 2) -> dict:
         """Revoke a certificate by its PF cert ID.
