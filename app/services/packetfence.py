@@ -306,7 +306,54 @@ class PacketFenceClient:
         if p12_resp.status_code != 200 or len(p12_resp.content) == 0:
             raise ValueError(f"No se pudo descargar el .p12 para cert ID {cert_id}. HTTP {p12_resp.status_code}, Size: {len(p12_resp.content)}")
 
-        return {"p12_bytes": p12_resp.content, "cert_id": cert_id}
+        # Step 3: Re-package .p12 with our password
+        # PacketFence may ignore the p12_password param and use its own,
+        # so we re-encrypt with the password we want to give the user.
+        p12_bytes = self._repackage_p12(p12_resp.content, password)
+
+        return {"p12_bytes": p12_bytes, "cert_id": cert_id}
+
+    @staticmethod
+    def _repackage_p12(original_p12: bytes, new_password: str) -> bytes:
+        """Re-encrypt a .p12 file with a new password.
+
+        PacketFence may use its own password for the .p12 file, so we
+        try common passwords to open it, then re-export with our password.
+        """
+        from cryptography.hazmat.primitives.serialization import pkcs12, BestAvailableEncryption
+
+        # Passwords to try when opening the original .p12 from PF
+        candidates = [None, b"", b"secret", b"changeit", b"password", b"pfcert"]
+
+        private_key = None
+        certificate = None
+        cas = None
+
+        for candidate in candidates:
+            try:
+                private_key, certificate, cas = pkcs12.load_key_and_certificates(
+                    original_p12, candidate
+                )
+                print(f"[PF-CERT] p12 abierto con password: {candidate!r}")
+                break
+            except Exception:
+                continue
+
+        if private_key is None or certificate is None:
+            # Could not open with any known password — return original
+            print("[PF-CERT] WARNING: No se pudo abrir el p12 para re-empaquetar, retornando original")
+            return original_p12
+
+        # Re-export with the desired password
+        repackaged = pkcs12.serialize_key_and_certificates(
+            name=None,
+            key=private_key,
+            cert=certificate,
+            cas=cas,
+            encryption_algorithm=BestAvailableEncryption(new_password.encode()),
+        )
+        print(f"[PF-CERT] p12 re-empaquetado con nueva password, size={len(repackaged)} bytes")
+        return repackaged
 
     async def revoke_cert(self, cert_id: str, reason: int = 2) -> dict:
         """Revoke a certificate by its PF cert ID.
