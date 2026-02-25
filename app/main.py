@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 
@@ -90,8 +91,20 @@ async def lifespan(app: FastAPI):
 
         await db.commit()
 
+    # Lanzar tarea de sincronizacion de nodos en background
+    from app.services.node_sync import run_node_sync_loop
+
+    node_sync_task = asyncio.create_task(run_node_sync_loop())
+
     logger.info("Sistema inicializado")
     yield
+
+    # Cancelar tarea de sincronizacion de nodos
+    node_sync_task.cancel()
+    try:
+        await node_sync_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title=settings.app_title, lifespan=lifespan)

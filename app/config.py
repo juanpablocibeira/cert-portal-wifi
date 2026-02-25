@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     pf_verify_ssl: bool = False
 
     jwt_expire_minutes: int = 480
+    node_sync_interval: int = 30  # seconds between node sync checks
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

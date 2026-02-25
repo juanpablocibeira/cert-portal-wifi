@@ -404,6 +404,31 @@ class PacketFenceClient:
             logger.warning(f"Error al eliminar usuario PF {pid}: {e}")
             return {"ok": False, "detail": str(e)[:200]}
 
+    async def list_unregistered_nodes(self) -> list:
+        """GET /api/v1/nodes — devuelve nodos con status=unreg."""
+        resp = await self._request(
+            "GET",
+            "/api/v1/nodes",
+            params={"status": "unreg"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if isinstance(data, list):
+            return data
+        return data.get("items", [])
+
+    async def register_node(self, mac: str, pid: str, category_id: int) -> dict:
+        """PATCH /api/v1/node/{mac} — registra nodo con status=reg + category_id."""
+        resp = await self._request(
+            "PATCH",
+            f"/api/v1/node/{mac}",
+            json={"status": "reg", "category_id": category_id, "pid": pid},
+        )
+        resp.raise_for_status()
+        if resp.content:
+            return resp.json()
+        return {"ok": True, "status": resp.status_code}
+
     async def list_profiles(self) -> list:
         """List available PKI profiles."""
         resp = await self._request("GET", "/api/v1/pki/profiles")
